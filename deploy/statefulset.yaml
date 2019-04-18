@@ -1,0 +1,68 @@
+apiVersion: apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: vault-ss
+  labels:
+    app: vault
+    role: server
+spec:
+  serviceName: vault
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+      role: server
+  template:
+    metadata:
+      labels:
+        app: vault
+        role: server
+    spec:
+      initContainers:
+      - name: vault-dir-chmod
+        image: alpine:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - "chmod o+w /vault/backend-file-storage"
+        volumeMounts:
+        - name: vault-backend-file-storage
+          mountPath: /vault/backend-file-storage
+      containers:
+      - name: vault
+        image: vault
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          capabilities:
+            add: [ "IPC_LOCK" ]
+        args:
+          - "server"
+        env:
+        - name: VAULT_ADDR
+          valueFrom:
+            configMapKeyRef:
+              name: vault-cm
+              key: vault.addr
+        - name: VAULT_LOCAL_CONFIG
+          valueFrom:
+            configMapKeyRef:
+              name: vault-cm
+              key: local.config
+        livenessProbe:
+          exec:
+            command:
+            - pidof
+            - vault
+          initialDelaySeconds: 5
+          timeoutSeconds: 2
+        ports:
+        - containerPort: 8200
+          name: api
+        - containerPort: 8201
+          name: rpc
+        volumeMounts:
+        - mountPath: /vault/backend-file-storage
+          name: vault-backend-file-storage
+      volumes:
+      - name: vault-backend-file-storage
+        persistentVolumeClaim:
+          claimName: vault-pvc
